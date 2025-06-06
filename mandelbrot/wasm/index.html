@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Mandelbrot WASM</title>
+</head>
+<body>
+  <canvas id="canvas" width="512" height="512"></canvas>
+  <script src="mandelbrot.js"></script>
+  <script>
+    Module().then(Module => {
+      const mandelbrot = Module.cwrap('mandelbrot', 'number', ['number', 'number', 'number']);
+
+      const canvas = document.getElementById('canvas');
+      const ctx = canvas.getContext('2d');
+      const width = canvas.width;
+      const height = canvas.height;
+
+      const tileSize = 64;
+      const numWorkers = navigator.hardwareConcurrency || 4;
+
+      let centerX = -0.5;
+      let centerY = 0.0;
+      let zoom = 1.0;
+      let maxIter = 8192;
+
+      const workers = Array.from({ length: numWorkers }, () => new Worker('worker.js'));
+
+      let pendingTiles = 0;
+      let imgBuffer = null;
+      
+
+      function drawFractal() {
+        return new Promise(resolve => {
+          const tiles = [];
+          imgBuffer = ctx.createImageData(canvas.width, canvas.height);
+          
+
+          for (let y = 0; y < canvas.height; y += tileSize) {
+            for (let x = 0; x < canvas.width; x += tileSize) {
+              tiles.push({
+                x,
+                y,
+                w: Math.min(tileSize, canvas.width - x),
+                h: Math.min(tileSize, canvas.height - y)
+              });
+            }
+          }
+
+          pendingTiles = tiles.length;
+
+          tiles.forEach((tile, i) => {
+            const worker = workers[i % workers.length];
+            worker.postMessage({
+              tile,
+              width: canvas.width,
+              height: canvas.height,
+              centerX,
+              centerY,
+              zoom,
+              maxIter
+            });
+          });
+
+          workers.forEach(worker => {
+            worker.onmessage = ({ data }) => {
+              const { x, y, w, h, pixels } = data;
+
+              let pixelIndex = 0;
+              for (let row = 0; row < h; row++) {
+                for (let col = 0; col < w; col++) {
+                  const imgIndex = ((y + row) * canvas.width + (x + col)) * 4;
+                  imgBuffer.data[imgIndex + 0] = pixels[pixelIndex++]; // R
+                  imgBuffer.data[imgIndex + 1] = pixels[pixelIndex++]; // G
+                  imgBuffer.data[imgIndex + 2] = pixels[pixelIndex++]; // B
+                  imgBuffer.data[imgIndex + 3] = 255; // A
+                }
+              }
+
+              if (pendingTiles > 0){
+                pendingTiles--;
+              }
+              console.log(pendingTiles);
+              if (pendingTiles === 0) {
+                ctx.putImageData(imgBuffer, 0, 0);
+              }
+            };
+        });
+
+      });
+    }
+
+      // Initial render
+      
+        (async () => {
+          await drawFractal();
+        })(); 
+
+      // Zoom & pan
+      let isDragging = false;
+      let lastX, lastY;
+
+      canvas.onmousedown = (e) => {
+        isDragging = true;
+        lastX = e.clientX;
+        lastY = e.clientY;
+      };
+
+      canvas.onmouseup = () => isDragging = false;
+
+      canvas.onmousemove = (e) => {
+        if (!isDragging) return;
+        const dx = (e.clientX - lastX) / width * (4 / zoom);
+        const dy = (e.clientY - lastY) / height * (4 / zoom);
+        centerX -= dx;
+        centerY -= dy;
+        lastX = e.clientX;
+        lastY = e.clientY;
+        (async () => {
+          await drawFractal();
+        })(); 
+      };
+
+      canvas.onwheel = (e) => {
+        e.preventDefault();
+        const delta = e.deltaY < 0 ? 1.1 : 0.9;
+        zoom *= delta;
+        (async () => {
+          await drawFractal();
+        })();
+      };
+    });
+  </script>
+</body>
+</html>

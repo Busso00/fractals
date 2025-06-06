@@ -1,0 +1,152 @@
+
+static inline float3 reflect(float3 I, float3 N) {
+    N = normalize(N);
+    return I - 2.0f * dot(I, N) * N;
+}
+
+
+void get_height(float cx, float cy, float scale, int max_iter, float x, float y, __private int* out_iter, __private float* out_height) {
+    float cre = cx + (x - cx) * scale;
+    float cim = cy + (y - cy) * scale;
+
+    float zr = 0.0f, zi = 0.0f;
+    float dr = 1.0f;
+    int i;
+    for (i = 0; i < max_iter; i++) {
+        float zr2 = zr * zr;
+        float zi2 = zi * zi;
+        if (zr2 + zi2 > 4.0f) break;
+
+        float new_dr = 2.0f * sqrt(zr2 + zi2) * dr + 1.0f;
+        dr = new_dr;
+
+        float tmp = zr2 - zi2 + cre;
+        zi = 2.0f * zr * zi + cim;
+        zr = tmp;
+    }
+
+    float r2 = zr * zr + zi * zi;
+    float distance = 0.5f * log(r2) * sqrt(r2) / dr;
+    float height = log(1.0f + distance * 20.0f) * scale;
+
+    *out_iter = i;
+    *out_height = height;
+}
+
+
+__kernel void mandelbrot_3d_surface_render_fp32(
+    __global uchar* output,
+    const int width,
+    const int height,
+    const float center_x,
+    const float center_y,
+    const float scale,
+    const int max_iter
+) {
+    int x_pixel = get_global_id(0);
+    int y_pixel = get_global_id(1);
+    int idx = y_pixel * width + x_pixel;
+
+    float fov = radians(45.0f);
+    float aspect = (float)width / (float)height;
+
+    float3 camera_pos = (float3)(center_x, center_y, 4.0f * scale);
+    float3 look_at = (float3)(center_x, center_y, - 100000.0f);
+    float3 forward = normalize(look_at - camera_pos);
+    float3 up = (float3)(0.0f, 1.0f, 0.0f);
+    float3 right = (float3) (1.0f, 0.0f, 0.0f);
+    up = cross(right, forward);
+
+    float ndc_x = 2.0f * (float)x_pixel / (float)width - 1.0f;
+    float ndc_y = 2.0f * (float)y_pixel / (float)height - 1.0f;
+
+    float3 ray_dir = normalize(
+        ndc_x * aspect * tan(fov / 2.0f) * right +
+        ndc_y * tan(fov / 2.0f) * up +
+        forward
+    );
+
+    float3 light_pos = (float3)(center_x + 4.0f, center_y + 4.0f, 4.0f * scale);
+
+    float t = 0.0f;
+    float max_dist = 100.0f;
+    float precision = 0.001f;
+
+    uchar3 final_color = (uchar3)(20, 30, 50);
+
+    for (int step = 0; step < 1000 && t < max_dist; step++) {
+        float3 pos = camera_pos + ray_dir * t;
+        float x = pos.x;
+        float y = pos.y;
+
+
+        int iter;
+        float height;
+        get_height(center_x, center_y, scale, max_iter, x, y, &iter, &height);
+
+        float dz = pos.z - height;
+        if (dz <= precision) {
+            float eps = 0.001f;
+            float hx1 = height;
+            int iter_d;
+            float hx2;
+            get_height(center_x, center_y, scale, max_iter, x - eps, y, &iter_d, &h2x);
+            float hy1 = height;
+            int iter_d;
+            float hy2;
+            get_height(center_x, center_y, scale, max_iter, x, y - eps, &iter_d, &h2y);
+
+            float3 normal = normalize((float3)((hx2 - hx1) / (eps), (hy2 - hy1) / (eps), 1.0f));
+
+            float3 light_dir = normalize(light_pos - pos);
+            float diffuse = max(dot(normal, light_dir), 0.0f);
+
+            float shadow = 1.0f;
+            float3 shadow_origin = pos + normal * precision * 2.0f;
+            for (float st = 0.0f; st < length(light_pos - shadow_origin); st += 0.01f) {
+                float3 shadow_pos = shadow_origin + light_dir * st;
+                float h_shadow = get_height(center_x, center_y, scale, max_iter, shadow_pos.x, shadow_pos.y);
+                if (shadow_pos.z > h_shadow + 0.001f) {
+                    shadow = 0.2f;
+                    break;
+                }
+            }
+
+            float ambient = 0.3f;
+            float lighting = ambient + diffuse * 0.7f * shadow;
+
+            float3 view_dir = normalize(camera_pos - pos);
+            float3 reflect_dir = normalize(reflect(-light_dir, normal));
+            float spec = pow(max(dot(view_dir, reflect_dir), 0.0f), 32.0f) * 0.5f;
+            lighting += spec * shadow;
+            lighting = clamp(lighting, 0.1f, 1.0f);
+
+
+            float3 base_color;
+
+            if (iter < (float) max_iter){
+
+                float t = log2((float)iter + 1.0);
+                float pi2 = 6.28318f;
+
+                base_color.x = 0.5f * (1.0f + sin(pi2 * t + 0.0f));
+                base_color.y = 0.5f * (1.0f + sin(pi2 * t + 2.0f));
+                base_color.z = 0.5f * (1.0f + sin(pi2 * t + 4.0f));
+            }
+            else{
+                base_color = (float3)(0.0f, 0.0f, 0.0f);
+            }
+
+            base_color *= lighting;
+            final_color = convert_uchar3_sat_rte(base_color * 255.0f);
+            break;
+        }
+
+        t += max(0.01f, fabs(dz) * 0.5f);
+    }
+
+    output[idx * 3 + 0] = final_color.x;
+    output[idx * 3 + 1] = final_color.y;
+    output[idx * 3 + 2] = final_color.z;
+}
+"#;
