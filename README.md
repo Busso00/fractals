@@ -1,1 +1,1 @@
-# See mandelbrot
+# See fractal images in their respective README
