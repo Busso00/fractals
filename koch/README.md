@@ -1,2 +1,2 @@
 # Koch snowflake fractal 
-![alt text](0.png)
+![alt text](img/0.png)
