@@ -429,10 +429,11 @@ __kernel void mandelbrot_dd_improved(
     mandelbrot_result m_res = mandelbrot_iter(cre, cim, max_iter);
     uchar3 color1 = get_potential_differential_shadow(m_res, cre, cim, max_iter, scale);
     uchar3 color2 = get_smooth_shadow(m_res, cre, cim, max_iter, scale);
-    uchar3 color3 = get_color(m_res, cre, cim, max_iter, scale);
+    //uchar3 color3 = get_color(m_res, cre, cim, max_iter, scale);
 
     uchar3 color12 = blend_aggressive(color1, color2);
     uchar3 color = blend_aggressive(color12, color3);
+    //uchar3 color = blend_aggressive(color12, (uchar3)(255.0, 255.0, 255.0));
 
     output[idx * 3] = color.x;
     output[idx * 3 + 1] = color.y;

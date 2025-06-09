@@ -1,12 +1,8 @@
 [package]
-name = "mandelbrot_explorer"
+name = "koch_fractal"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
 eframe = { version = "0.31.1", features = ["glow"]}
 egui_glow = "0.31.1"
-f128 = "0.2"
-num-traits = "0.2"
-log = "0.4"
-ocl = "0.19"
