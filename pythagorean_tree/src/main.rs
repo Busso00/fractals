@@ -18,13 +18,18 @@ impl Point {
     }
 }
 
+struct Square {
+    points: [Point; 4],
+    depth: u32,
+}
+
 struct PythagorasTree {
     order: u32,
     max_order: u32,
     base_length: f32,
     show_controls: bool,
     mouse_x: f32,
-    ground_level: f32
+    ground_level: f32,
 }
 
 impl Default for PythagorasTree {
@@ -32,10 +37,10 @@ impl Default for PythagorasTree {
         Self {
             order: 1,
             max_order: 12,
-            base_length: 100.0,
+            base_length: 128.0,
             show_controls: true,
-            mouse_x: 512.0,
-            ground_level: 1024.0 - 180.0
+            mouse_x: 504.0,
+            ground_level: 1024.0 - 180.0,
         }
     }
 }
@@ -45,22 +50,22 @@ impl PythagorasTree {
         // Create a smooth transition from brown (trunk) to green (leaves)
         let max_depth = self.max_order;
         let progress = (max_depth - depth) as f32 / max_depth as f32;
-        
+
         // Brown color (trunk): RGB(101, 67, 33)
         let brown_r = 101.0;
         let brown_g = 67.0;
         let brown_b = 33.0;
-        
+
         // Green color (leaves): RGB(34, 139, 34)
         let green_r = 34.0;
         let green_g = 139.0;
         let green_b = 34.0;
-        
+
         // Interpolate between brown and green
         let r = (brown_r + (green_r - brown_r) * progress) as u8;
         let g = (brown_g + (green_g - brown_g) * progress) as u8;
         let b = (brown_b + (green_b - brown_b) * progress) as u8;
-        
+
         Color32::from_rgb(r, g, b)
     }
 
@@ -74,16 +79,17 @@ impl PythagorasTree {
         a: f32,
         b: f32,
         left: bool,
+        squares: &mut Vec<Square>,
     ) {
         if depth == 0 {
             return;
         }
-        
+
         let mut p1 = p; // Bottom-left point
         let mut p2 = Point::new(p.x + size * angle.cos(), p.y - size * angle.sin());
         let mut p3 = Point::new(p2.x - size * angle.sin(), p2.y - size * angle.cos());
         let mut p4 = Point::new(p1.x - size * angle.sin(), p1.y - size * angle.cos());
-        
+
         if !left {
             p1 = p1;
             p2 = Point::new(p.x - size * angle.cos(), p.y + size * angle.sin());
@@ -91,13 +97,20 @@ impl PythagorasTree {
             p4 = Point::new(p1.x - size * angle.sin(), p1.y - size * angle.cos());
         }
 
-        let color = self.get_color_for_depth(depth);
+        //let color = self.get_color_for_depth(depth);
 
+        /*
         painter.add(egui::Shape::convex_polygon(
             vec![p1.to_pos2(), p2.to_pos2(), p3.to_pos2(), p4.to_pos2()],
             color,
             Stroke::new(1.0, Color32::from_rgb(40, 25, 15)), // Dark brown outline
         ));
+
+        */
+        squares.push(Square {
+            points: [p1, p2, p3, p4],
+            depth,
+        });
 
         let hyp = (a * a + b * b).sqrt();
         if hyp == 0.0 {
@@ -111,11 +124,51 @@ impl PythagorasTree {
         let beta = b.atan2(a);
 
         if left {
-            self.draw_tree(p4, left_size, angle + alpha, painter, depth - 1, a, b, true);
-            self.draw_tree(p3, right_size, angle - beta, painter, depth - 1, a, b, false); 
+            self.draw_tree(
+                p4,
+                left_size,
+                angle + alpha,
+                painter,
+                depth - 1,
+                a,
+                b,
+                true,
+                squares,
+            );
+            self.draw_tree(
+                p3,
+                right_size,
+                angle - beta,
+                painter,
+                depth - 1,
+                a,
+                b,
+                false,
+                squares,
+            );
         } else {
-            self.draw_tree(p3, left_size, angle + alpha, painter, depth - 1, a, b, true);
-            self.draw_tree(p4, right_size, angle - beta, painter, depth - 1, a, b, false); 
+            self.draw_tree(
+                p3,
+                left_size,
+                angle + alpha,
+                painter,
+                depth - 1,
+                a,
+                b,
+                true,
+                squares,
+            );
+            self.draw_tree(
+                p4,
+                right_size,
+                angle - beta,
+                painter,
+                depth - 1,
+                a,
+                b,
+                false,
+                squares,
+            );
         }
     }
 
@@ -129,10 +182,10 @@ impl PythagorasTree {
         // Position root at the bottom of the screen
         // Adjusted ground_level to make the terrain taller (start higher on screen)
         let root_size = self.base_length;
-        
+
         // Offset for the tree and scene to move it slightly to the right
-        let scene_offset_x = 50.0; 
-        let root_x = screen_width / 2.0 - root_size / 2.0 + scene_offset_x;
+        let scene_offset_x = 0.0;
+        let root_x = screen_width / 2.0 + root_size / 2.0 + scene_offset_x;
         let root_y = self.ground_level;
 
         let root_point = Point::new(root_x, root_y);
@@ -142,10 +195,22 @@ impl PythagorasTree {
         let leg_a = skew_angle_for_legs.cos();
         let leg_b = skew_angle_for_legs.sin();
 
+        let mut squares = Vec::<Square>::new();
         // Draw tree
         self.draw_tree(
-            root_point, root_size, 0.0, painter, self.order, leg_a, leg_b, false,
+            root_point, root_size, 0.0, painter, self.order, leg_a, leg_b, false, &mut squares
         );
+
+        for order in 0..(self.order+1) {
+            for sq in squares.iter().filter(|s| s.depth == (self.order+1)-order) {
+                let color = self.get_color_for_depth(sq.depth);
+                painter.add(egui::Shape::convex_polygon(
+                    sq.points.iter().map(|p| p.to_pos2()).collect(),
+                    color,
+                    Stroke::new(1.0, Color32::from_rgb(40, 25, 15)),
+                ));
+            }
+        }
     }
 
     fn increment_order(&mut self) {
@@ -186,49 +251,51 @@ impl eframe::App for PythagorasTree {
             }
 
             let available_rect = ui.available_rect_before_wrap();
-            self.mouse_x = ctx.input(|i| i.pointer.hover_pos().map(|p| p.x).unwrap_or(512.0));
+            self.mouse_x = ctx.input(|i| i.pointer.hover_pos().map(|p| p.x).unwrap_or(504.0));
 
             let painter = ui.painter();
-            
+
             // Draw gradient background (sky)
             let gradient_steps = 50;
             let step_height = available_rect.height() / gradient_steps as f32;
-            
+
             for i in 0..gradient_steps {
                 let progress = i as f32 / (gradient_steps - 1) as f32;
                 let r = (240.0 + (135.0 - 240.0) * progress) as u8;
                 let g = (248.0 + (206.0 - 248.0) * progress) as u8;
                 let b = (255.0 + (235.0 - 255.0) * progress) as u8;
-                
+
                 let color = Color32::from_rgb(r, g, b);
                 let y_start = available_rect.top() + i as f32 * step_height;
                 let y_end = y_start + step_height + 1.0; // Small overlap to avoid gaps
-                
+
                 painter.rect_filled(
                     egui::Rect::from_min_max(
                         Pos2::new(available_rect.left(), y_start),
-                        Pos2::new(available_rect.right(), y_end)
+                        Pos2::new(available_rect.right(), y_end),
                     ),
                     egui::Rounding::ZERO,
                     color,
                 );
 
-                if y_start + step_height >= self.ground_level{
+                if y_start + step_height >= self.ground_level {
                     painter.rect_filled(
-                    egui::Rect::from_min_max(
-                        Pos2::new(available_rect.left(), y_start),
-                        Pos2::new(available_rect.right(), y_end)
-                    ),
-                    egui::Rounding::ZERO,
-                    Color32::from_rgb(139, 119, 85), // Sandy brown terrain color
+                        egui::Rect::from_min_max(
+                            Pos2::new(available_rect.left(), y_start),
+                            Pos2::new(available_rect.right(), y_end),
+                        ),
+                        egui::Rounding::ZERO,
+                        Color32::from_rgb(139, 119, 85), // Sandy brown terrain color
                     );
                 }
-                
-    
             }
 
-            self.draw(painter, available_rect.width(), available_rect.height(), ctx);
-            
+            self.draw(
+                painter,
+                available_rect.width(),
+                available_rect.height(),
+                ctx,
+            );
 
             let info = format!(
                 "Order: {} | Mouse X: {:.1} (Tree skew)",
