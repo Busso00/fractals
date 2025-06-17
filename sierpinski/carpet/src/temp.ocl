@@ -1,0 +1,43 @@
+
+static inline float menger_sponge_sdf(float3 p, int iterations) {
+    float scale = 2.0f;
+    float d = 0.0f;
+    
+    float3 new_pos = p;
+    float dist = box_sdf(p, 1);
+
+    for (int i = 0; i < iterations; ++i) {
+        scale/=3.0f; 
+
+        if (dist <= 0.01){
+            // internal point only update
+            // find cuboid 1 to 27 in which point lies
+            //map x,y,z to cuboid
+
+             
+            float pos_x = floor(new_pos.x/scale);
+            float pos_y = floor(new_pos.y/scale);
+            float pos_z = floor(new_pos.z/scale);
+
+            if ((pos_x == 1.0f) || (pos_y == 1.0f) || (pos_z == 1.0f)){
+                //void
+
+                new_pos = (float3)(new_pos.x-pos_x, new_pos.y-pos_y, new_pos.z-pos_z)
+                float x_offset = min(new_pos.x, scale - new_pos.x);
+                float y_offset = min(new_pos.y, scale - new_pos.y);
+                float z_offset = min(new_pos.z, scale - new_pos.z);
+
+                float min_dist0 = min(x_offset, y_offset);
+                float min_dist = min(min_dist0, z_offset);
+
+                dist = max(dist, min_dist);
+            }
+        }
+        else{
+            //to simplify if point is out dist is returned
+            return dist;
+        }
+    }
+
+    return dist;
+}

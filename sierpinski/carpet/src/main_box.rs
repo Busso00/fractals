@@ -13,40 +13,30 @@ static inline float box_sdf(float3 p, float3 size) {
     return length(max(d, 0.0f)) + min(max(d.x, max(d.y, d.z)), 0.0f);
 }
 
+// Menger sponge distance function
 static inline float menger_sponge_sdf(float3 p, int iterations) {
-    float d = box_sdf(p, 1.0f);  // Start with unit cube
-    float s = 1.0f;
+    float d = box_sdf(p, (float3)(1.0f, 1.0f, 1.0f));
     
+    float scale = 1.0f;
     for (int i = 0; i < iterations; i++) {
         
-        float3 scaled_p = fabs(p * s);
+        // map point p to [-1,1) (1/3 square)
+        float3 a = fmod(p * scale, 2.0f) - 1.0f;
+        scale *= 3.0f;
+        // map point to scaled version in [-2, 1] (now points near to center are near to -2, points above -1 are filled),
+        // using fabs maps point to [0, 2] in this way points in center are the only which maps > 1
+        float3 r = fabs(1.0f - 3.0f * fabs(a));
+        //check for the point external (max)
+        float da = max(r.x, r.y);
+        float db = max(r.y, r.z);
+        float dc = max(r.z, r.x);
+        float c = (min(da, min(db, dc)) - 1.0f) / scale;
         
-        // Map to repeating unit cells [-1,1] -> [-1,1]
-        float3 a = fmod(scaled_p + 1.0f, 2.0f) - 1.0f;
-        
-        // Scale factor for next iteration
-        s *= 3.0f;
-        
-        // Calculate distances to cross-shaped holes
-        float3 q = fabs(a) - 1.0f/3.0f;
-        
-        float cross_xy = max(q.x, q.y );
-        float cross_yz = max(q.y, q.z );
-        float cross_xz = max(q.x, q.z );
-        
-        // Union of all three crosses (minimum distance to any hole)
-        float hole_dist = min(cross_xy, min(cross_yz, cross_xz));
-        
-        // Scale the hole distance back to world space
-        float scaled_hole = hole_dist / s;
-        
-        // Subtract holes from the solid (max operation for SDF subtraction)
-        d = max(d, -scaled_hole);
+        d = max(d, c);
     }
     
     return d;
 }
-
 
 static inline float3 reflect(float3 I, float3 N) {
     // Ensure N is normalized for correct reflection calculation
@@ -61,13 +51,12 @@ static inline bool ray_menger_intersection(
     float3 ray_dir,
     float center_x,
     float center_y,
-    int iter,
     float* t_out,
     float3* hit_point_out
 ) {
     float t = 0.01f;             // Start a bit away from the ray origin
     const float max_t = 100.0f;  // Max ray length
-    const float epsilon = 0.001f; // Surface hit threshold
+    const float epsilon = 0.01f; // Surface hit threshold
 
     for (int i = 0; i < 512; i++) {
         float3 p = ray_origin + ray_dir * t;
@@ -79,7 +68,7 @@ static inline bool ray_menger_intersection(
             p.z
         );
 
-        float dist = menger_sponge_sdf(sponge_p, iter);
+        float dist = box_sdf(sponge_p, 1);
 
         if (dist < epsilon) {
             *t_out = t;
@@ -107,12 +96,15 @@ static inline float3 calculate_normal(
         p.z
     );
     
-    float d = menger_sponge_sdf(sponge_p, max_iter); 
+    // FIXED: Use box_sdf here to calculate the gradient correctly.
+    // The 'd' value should be the SDF of the actual Menger sponge at this point.
+    float d = box_sdf(sponge_p, (float3)(1.0f, 1.0f, 1.0f)); 
     
+    // FIXED: Use box_sdf for the perturbed points as well.
     float3 n = (float3)(
-        menger_sponge_sdf(sponge_p + (float3)(epsilon, 0, 0), max_iter) - d,
-        menger_sponge_sdf(sponge_p + (float3)(0, epsilon, 0), max_iter) - d,
-        menger_sponge_sdf(sponge_p + (float3)(0, 0, epsilon), max_iter) - d
+        box_sdf(sponge_p + (float3)(epsilon, 0, 0), (float3)(1.0f, 1.0f, 1.0f)) - d,
+        box_sdf(sponge_p + (float3)(0, epsilon, 0), (float3)(1.0f, 1.0f, 1.0f)) - d,
+        box_sdf(sponge_p + (float3)(0, 0, epsilon), (float3)(1.0f, 1.0f, 1.0f)) - d
     );
     
     return normalize(n);
@@ -165,7 +157,6 @@ __kernel void menger_3d_surface_render(
     bool hit = ray_menger_intersection(
         camera_pos, ray_dir,
         center_x, center_y,
-        max_iter,
         &t, &hit_point
     );
 
@@ -185,7 +176,7 @@ __kernel void menger_3d_surface_render(
 
         // Soft shadows (optional)
         float3 shadow_origin = hit_point + normal * 0.01f;
-        for (float st = 0.0f; st < length(light_pos - shadow_origin); st += 0.01f) {
+        for (float st = 0.0f; st < length(light_pos - shadow_origin); st += 0.1f) {
             float3 sp = shadow_origin + light_dir * st;
 
             float3 sponge_sp = (float3)(
@@ -193,7 +184,7 @@ __kernel void menger_3d_surface_render(
                 (sp.y - center_y),
                 sp.z
             );
-            float d = menger_sponge_sdf(sponge_sp, max_iter);
+            float d = box_sdf(sponge_sp, (float3)(1.0f, 1.0f, 1.0f));
             if (d < 0.01f) {
                 shadow = 0.2f;
                 break;

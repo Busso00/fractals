@@ -7,3 +7,4 @@ edition = "2024"
 [dependencies]
 eframe = { version = "0.31.1", features = ["glow"]}
 egui_glow = "0.31.1"
+ocl = "0.19"
