@@ -5,17 +5,16 @@ use std::sync::{Arc};
 use std::time::{Instant, Duration};
 
 const TETHRAEDRON_KERNEL_F32: &str = r#"
-// Sierpinski 3D texture kernel
+// Menger sponge 3D texture kernel
 
 
-// Signed Distance Function for a regular tetrahedron centered at origin
 static inline float tetrahedron_sdf(float3 p, float size) {
     // Define the 4 face normals of a regular tetrahedron
-    float3 v1 = (float3)( 0.0f, -0.5f, 0.0f);
-    float3 v2 = (float3)( 0.4714f, 0.1667f, 0.0f);
-    float3 v3 = (float3)(-0.2357f, 0.1667f, 0.4082f);
-    float3 v4 = (float3)(-0.2357f, 0.1667f, -0.4082f);
-    
+    float3 v1 = (float3)( 0.0f, 0.0f, 0.433f);
+    float3 v2 = (float3)(-0.5f, 0.0f, -0.433f);
+    float3 v3 = (float3)( 0.5f, 0.0f, -0.433f);
+    float3 v4 = (float3)( 0.0f, -0.866f, 0.0f);
+
     float3 mid1 = (v2 + v3 + v4)/ 3.0f;  
     float3 n1 = v1 - mid1;
 
@@ -38,39 +37,12 @@ static inline float tetrahedron_sdf(float3 p, float size) {
     return max(max(d1, d2), max(d3, d4));
 }
 
-// Recursive SDF for Sierpiński Tetrahedron
+// 3D Sierpinski Triangle (Tetrahedron) SDF
 static inline float sierpinski_3d_sdf(float3 p, int iterations) {
-    float scale = 1.0f * pow(2.0f, (float)(iterations - 1));
-
-    // 4 corners of a tetrahedron in unit space
-    const float3 offsets[4] = {
-        (float3)( 0.0f, -0.5f,  0.0f)*2.0f,
-        (float3)( 0.4714f,  0.1667f,  0.0f)*2.0f,
-        (float3)(-0.2357f,  0.1667f,  0.4082f)*2.0f,
-        (float3)(-0.2357f,  0.1667f, -0.4082f)*2.0f
-    };
-
-    for (int i = 0; i < iterations; i++) {
-        
-        
-        // Find the nearest corner to map to
-        float3 closest = offsets[0];
-        float min_dist = length(p + offsets[0]);
-
-        for (int j = 1; j < 4; j++) {
-            float dist = length(p + offsets[j]);
-            if (dist < min_dist) {
-                min_dist = dist;
-                closest = offsets[j];
-            }
-        }
-
-        // Transform into the chosen sub-tetrahedron
-        p = (p + closest)*2.0f;
-        scale *= 0.5f;
-    }
-
-    return tetrahedron_sdf(p, scale) * scale / pow(2.0f, (float)(iterations - 1));
+    float d = tetrahedron_sdf(p, 0.5f);  // Start with unit tetrahedron
+    //wrapper
+    
+    return d;
 }
 
 
@@ -370,7 +342,7 @@ impl App for SpongeApp {
                 ui.label("Iterations:");
                 let old_iter = self.max_iterations;
                 // Changed max range from 1024 to 30 for better performance and visibility
-                ui.add(egui::Slider::new(&mut self.max_iterations, 0..=40).logarithmic(true)); 
+                ui.add(egui::Slider::new(&mut self.max_iterations, 1..=10).logarithmic(true)); 
                 if old_iter != self.max_iterations {
                     self.texture = None; // Force redraw if iterations changed
                 }
