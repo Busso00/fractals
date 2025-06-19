@@ -141,14 +141,14 @@ impl eframe::App for DragonCurve {
 
 
 
-        ctx.request_repaint(); // continually repaint for smooth updates
+        ctx.request_repaint(); 
     }
 }
 
 fn main() -> Result<(), eframe::Error> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([1000.0, 800.0]) // Adjusted size for better view
+            .with_inner_size([1000.0, 800.0])
             .with_title("Dragon Curve Fractal"),
         ..Default::default()
     };

@@ -370,7 +370,7 @@ impl App for SpongeApp {
                 ui.label("Iterations:");
                 let old_iter = self.max_iterations;
                 // Changed max range from 1024 to 30 for better performance and visibility
-                ui.add(egui::Slider::new(&mut self.max_iterations, 0..=40).logarithmic(true)); 
+                ui.add(egui::Slider::new(&mut self.max_iterations, 0..=10).logarithmic(true)); 
                 if old_iter != self.max_iterations {
                     self.texture = None; // Force redraw if iterations changed
                 }

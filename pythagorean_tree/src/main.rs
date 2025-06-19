@@ -1,5 +1,5 @@
 use eframe::egui;
-use egui::{Color32, Painter, Pos2, Stroke, Vec2};
+use egui::{Color32, Painter, Pos2, Stroke};
 use std::f32::consts::PI;
 
 #[derive(Debug, Clone, Copy)]
